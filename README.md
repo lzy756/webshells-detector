@@ -62,7 +62,7 @@ graph TB
     F1 --> F2
     F2 --> G1 & G2 & G3
 
-    style Core fill:#1a1a2e,color:#fff
+    style Core fill:#355c7d,color:#fff
     style Static fill:#16213e,color:#fff
     style Deep fill:#0f3460,color:#fff
 ```
