@@ -431,12 +431,12 @@ gantt
 
 | 里程碑 | 周期 | 状态 | 目标 |
 |--------|------|------|------|
-| **M1: 最小闭环** | 4 周 | ✅ 已完成 | 核心管道全链路：Ingest → Classify → Regex/YARA → StatFeatures → Gate → LLM → Aggregate → Emit；CLI 扫描 |
-| **M2: JSP/Java 检测** | 4 周 | ✅ 已完成 | JSP 预处理 & AST 分析；CFR 反编译；Java .class 检测；Fat Jar/WAR 扫描；Recall ≥ 85% |
-| **M3: 内存马探测** | 4 周 | 📋 规划中 | 独立 Java Agent（JVM Attach）；Filter/Servlet/Controller 枚举；ClassAnalyzer 打分；Python 集成 |
-| **M4: 生产化部署** | 4 周 | 📋 规划中 | PostgreSQL 持久化；FastAPI REST API；Docker Compose；K8s Helm Chart；主机探针；SOC 工作台 |
-| **M5: 智能演进** | 持续 | 📋 规划中 | RAG 样本库扩张；模型微调；主动学习 |
-| **M6: 对抗增强** | 持续 | 📋 规划中 | 对抗变形器；SOAR 对接；自动修复 |
+| **M1: 最小闭环** | 4 周 | √ 已完成 | 核心管道全链路：Ingest → Classify → Regex/YARA → StatFeatures → Gate → LLM → Aggregate → Emit；CLI 扫描 |
+| **M2: JSP/Java 检测** | 4 周 | √ 已完成 | JSP 预处理 & AST 分析；CFR 反编译；Java .class 检测；Fat Jar/WAR 扫描；Recall ≥ 85% |
+| **M3: 内存马探测** | 4 周 | 规划中 | 独立 Java Agent（JVM Attach）；Filter/Servlet/Controller 枚举；ClassAnalyzer 打分；Python 集成 |
+| **M4: 生产化部署** | 4 周 | 规划中 | PostgreSQL 持久化；FastAPI REST API；Docker Compose；K8s Helm Chart；主机探针；SOC 工作台 |
+| **M5: 智能演进** | 持续 | 规划中 | RAG 样本库扩张；模型微调；主动学习 |
+| **M6: 对抗增强** | 持续 | 规划中 | 对抗变形器；SOAR 对接；自动修复 |
 
 ### M3 内存马探测（规划）
 
