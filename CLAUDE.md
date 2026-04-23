@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Language
 
-Always respond in Chinese-simplified.
+Always respond in Chinese-simplified.And also generate contents with no whitespaces between Chinese Characters and non Chinese characters(don't write like"用当前文件夹下 uv 配置的虚拟环境", but write like "用当前文件夹下uv配置的虚拟环境")
 
 ## Environment
 

@@ -1,567 +1,547 @@
 # Webshell Agent (WSA)
 
-基于 LangGraph 的 Agent 化 Webshell 检测系统。核心思路：**规则做召回，语义做精度，沙箱做确认**。
+基于 LangGraph 的恶意脚本检测项目，当前实现重点覆盖 `JSP` 与 `Java .class` 场景，并提供可选的 `LLM`、`RAG`、多代理协作裁决能力。
 
-覆盖 Nginx-PHP、Tomcat（JSP/Servlet）、Spring Boot（含内存马）三大技术栈，支持离线批量扫描和实时监测两种模式。
+项目入口命令是 `wsa`，核心包位于 `src/wsa`。
 
-## 系统架构
+## 当前实现一览
 
 ```mermaid
-graph TB
-    subgraph Input["输入层"]
-        A1[离线批量扫描]
-        A2[inotify 实时监控]
-        A3[审计日志]
-        A4[远程探针]
+flowchart LR
+    %% Styles
+    classDef input fill:#fdf2f2,stroke:#f05252,stroke-width:2px;
+    classDef analysis fill:#f0f9ff,stroke:#0689d7,stroke-width:2px;
+    classDef deep fill:#f0fff4,stroke:#22c55e,stroke-width:2px;
+    classDef output fill:#fef9c3,stroke:#ca8a04,stroke-width:2px;
+
+    subgraph Input [Data Source]
+        A1([File])
+        A2([Directory])
+        A3([ZIP/JAR/WAR])
     end
 
-    subgraph Core["LangGraph 编排核心"]
+    subgraph Static [Static Engine]
+        B1[Ingest] --> B2[Classify]
+        B2 --> B3[Deobfuscate]
+        B3 --> B4[Regex/YARA]
+        B4 --> B5[AST/Stat]
+        B5 --> B6{Gate}
+    end
+
+    subgraph Deep [Deep Analysis]
         direction TB
-        B1[Ingest<br/>文件读取 · Hash · 熵 · MIME]
-        B2[Classify<br/>技术栈识别]
-        B3[Deobfuscate<br/>多层反混淆]
-        B4[Fast Fail<br/>未知类型快速退出]
-
-        subgraph Static["静态分析流水线"]
-            C1[Regex Scan<br/>26 条规则]
-            C2[YARA Scan<br/>10 条规则]
-            C3[AST Analysis<br/>污点分析 · 反射链 · ClassLoader]
-            C4[Stat Features<br/>熵 · 行长 · Base64 密度]
-        end
-
-        D1[Confidence Gate<br/>加权评分 · 多源加成]
-
-        subgraph Deep["深度分析（按需）"]
-            E1[LLM Judge<br/>Claude 语义研判]
-            E2[Sandbox<br/>Docker + strace]
-        end
-
-        F1[Aggregate<br/>证据融合 · 最终判定]
-        F2[Emit<br/>ECS 告警输出]
+        C1[LLM Judge]
+        C2[Multi-Agent]
+        C3[Sandbox]
+        C4[(RAG Store)]
     end
 
-    subgraph Output["输出层"]
-        G1[CLI 表格/JSON]
-        G2[ECS 告警]
-        G3[MITRE ATT&CK 映射]
+    subgraph Finalize [Output]
+        D1[Aggregate] --> D2[ECS Alert]
+        D2 --> D3[/Report/]
     end
 
-    A1 & A2 & A3 & A4 --> B1
-    B1 --> B2
-    B2 -->|php/jsp| B3
-    B2 -->|java_class| C3
-    B2 -->|script| C1
-    B2 -->|unknown| B4
-    B3 --> C1 --> C2 --> C3
-    C3 --> C4 --> D1
-    B4 --> F1
-    D1 -->|"≥0.9 或 ≤0.1"| F1
-    D1 -->|"0.3~0.7"| E1
-    D1 -->|"0.7~0.9"| E2
-    E2 --> E1 --> F1
-    F1 --> F2
-    F2 --> G1 & G2 & G3
+    A1 & A2 & A3 --> B1
+    B6 -- Low/High --> D1
+    B6 -- Mid --> C1 & C2
+    B6 -- Sandbox --> C3
+    C4 -.-> C1 & C2
+    C1 & C2 & C3 --> D1
 
-    style Core fill:#ebf8ff,color:#2b6cb0,stroke:#90cdf4
-    style Static fill:#f0fff4,color:#2f855a,stroke:#9ae6b4
-    style Deep fill:#faf5ff,color:#6b46c1,stroke:#d6bcfa
+    class A1,A2,A3 input;
+    class B1,B2,B3,B4,B5,B6 analysis;
+    class C1,C2,C3,C4 deep;
+    class D1,D2,D3 output;
 ```
 
-## LangGraph 管道流程
+- 基于 LangGraph 的扫描主图，包含 `ingest -> classify -> deobfuscate -> regex -> yara -> ast/stat -> gate -> llm/sandbox -> aggregate -> emit`
+- 支持扫描单文件或目录，CLI 可识别扩展名：`.jsp`、`.jspx`、`.class`、`.jar`、`.war`、`.php`、`.phtml`、`.phar`、`.sh`、`.bat`、`.ps1`、`.py`
+- 已内置规则与分析能力主要覆盖：
+  - `14` 条 JSP Regex 规则
+  - `12` 条 Java Regex 规则
+  - `5` 条 JSP YARA 规则
+  - `5` 条 Java YARA 规则
+  - Java/JSP AST 分析：污点传播、反射链、ClassLoader 滥用、危险类型实例化
+- 支持可选的 LLM 复判
+  - 单模型模式：`llm_judge`
+  - 多代理模式：`Commander + Advisor + Validator`
+- 支持可选的 RAG 检索增强裁决
+- 聚合后会生成 ECS 风格告警结构，CLI 默认输出表格，也支持 `json` / `jsonl`
+
+## 实际能力边界
+
+这部分基于当前代码而不是设计文档。
+
+- 内置检测重点是 `JSP` 和 `Java .class`
+- `PHP` 文件会进入去混淆、规则/YARA、统计特征流程，但当前仓库没有专门的 PHP Regex/YARA 规则，`ast_php` 也是占位节点
+- CLI 接受 `.jar` / `.war`，仓库里也有 [`src/wsa/tools/jar_scanner.py`](src/wsa/tools/jar_scanner.py)，但主 CLI 和主图目前没有把 JAR/WAR 解包深扫接入默认扫描流程
+- Sandbox 仅对 `jsp` / `php` 提供 Docker 执行路径
+- 配置模型里存在一些预留项，例如 `checkpoint_backend`、`langsmith_enabled`、部分扫描参数；它们目前没有全部贯通到主 CLI 行为
+
+## 处理流程
 
 ```mermaid
-stateDiagram-v2
-    [*] --> ingest
-    ingest --> classify
+flowchart TD
+    Start([Ingest]) --> Classify{Classify}
 
-    classify --> deobfuscate: php / jsp
-    classify --> ast_java: java_class
-    classify --> regex_scan: script
-    classify --> fast_fail: unknown
+    Classify -- "jsp / php" --> Deobfuscate[Deobfuscate]
+    Classify -- "java_class" --> AST_Java[AST Java]
+    Classify -- "script" --> Regex[Regex Scan]
+    Classify -- "unknown" --> Fail([Fast Fail])
 
-    deobfuscate --> regex_scan
-    regex_scan --> yara_scan
-    yara_scan --> ast_php: php
-    yara_scan --> ast_jsp: jsp
-    yara_scan --> stat_features: other
+    Deobfuscate --> Regex
+    Regex --> Yara[YARA Scan]
 
-    ast_java --> stat_features
-    ast_php --> stat_features
-    ast_jsp --> stat_features
+    Yara -- "jsp" --> AST_JSP[AST JSP]
+    Yara -- "php" --> AST_PHP[AST PHP stub]
+    Yara -- "other" --> Stat[Stat Features]
 
-    stat_features --> confidence_gate
+    AST_Java --> Stat
+    AST_JSP --> Stat
+    AST_PHP --> Stat
 
-    confidence_gate --> aggregate: direct (≥0.9 / ≤0.1)
-    confidence_gate --> llm_judge: llm (0.3~0.7)
-    confidence_gate --> sandbox: sandbox (0.7~0.9)
+    Stat --> Gate{Confidence Gate}
 
-    sandbox --> llm_judge
-    llm_judge --> aggregate
+    Gate -- "High/Low" --> Agg[Aggregate]
+    Gate -- "Mid (0.3~0.9)" --> LLM[[LLM / Multi-Agent]]
+    Gate -- "High-Mid + Sandbox" --> Sandbox[Sandbox]
 
-    fast_fail --> aggregate
-    aggregate --> emit
-    emit --> [*]
+    Sandbox --> LLM
+    LLM --> Agg
+    Fail --> Agg
+
+    Agg --> End[/ECS Alert/]
+
+    %% Styling
+    style Gate fill:#fff4dd,stroke:#d4a017,stroke-width:2px
+    style Classify fill:#fff4dd,stroke:#d4a017,stroke-width:2px
+    style LLM fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style Sandbox fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style End fill:#ffebee,stroke:#c62828,stroke-width:2px
 ```
 
-## 置信门决策逻辑
+### 置信度与裁决
 
-```mermaid
-graph LR
-    A[综合置信度] --> B{confidence}
-    B -->|"≥ 0.9"| C[直出 → malicious]
-    B -->|"≤ 0.1"| D[直出 → benign]
-    B -->|"0.7 ~ 0.9"| E[Sandbox 分析]
-    B -->|"0.3 ~ 0.7"| F[LLM 语义研判]
-    B -->|"0.1 ~ 0.3"| G[直出 → benign/unknown]
-    E --> F
-    F --> H[Aggregate 最终判定]
-    C & D & G --> H
+- 基础置信度来自证据源加权：
+  - `yara=1.0`
+  - `ast=1.0`
+  - `regex=0.9`
+  - `stat=0.5`
+  - `llm=0.8`
+- 多源高分命中会额外加成
+- 高熵、超长行等统计异常会额外加成
+- 主图分流 logic：
+  - `confidence >= gate_high` 或 `<= gate_low`：直接聚合
+  - `0.3 <= confidence < gate_high`：走 LLM
+  - `confidence >= 0.7` 且启用 sandbox：先 sandbox，再 LLM
+- 最终裁决阈值：
+  - `>= 0.8` -> `malicious`
+  - `>= 0.4` -> `suspicious`
+  - `<= 0.15` -> `benign`
+  - 其他 -> `unknown`
 
-    style C fill:#e74c3c,color:#fff
-    style D fill:#2ecc71,color:#fff
-    style E fill:#f39c12,color:#fff
-    style F fill:#3498db,color:#fff
+## 安装
+
+### 基础依赖
+
+- Python `3.11+`
+- `uv`
+- 可选：JDK
+  - 用于 `javap`
+  - 如果你额外放入 `vendor/cfr.jar`，会优先使用 CFR 反编译
+- 可选：Docker
+  - 用于 sandbox 行为分析
+
+### 安装命令
+
+```bash
+uv sync --dev
+```
+
+如果需要 RAG：
+
+```bash
+uv sync --dev --extra rag
+```
+
+### LLM Provider 说明
+
+默认依赖里已经包含 `Anthropic` provider。
+
+如果你要切换到 `OpenAI` 或本地 `Ollama`，当前项目代码已支持，但需要你自行补装对应依赖：
+
+```bash
+uv add langchain-openai
+uv add langchain-ollama
 ```
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.11+（推荐 3.12）
-- [uv](https://github.com/astral-sh/uv) 包管理器
-- JDK 11+（可选，用于 .class 反编译）
-- Anthropic API Key（可选，用于 LLM 语义研判）
-
-### 安装
+### 1. 配置环境
 
 ```bash
-# 克隆项目
-git clone <repo-url> webshell-agent
-cd webshell-agent
-
-# 创建虚拟环境并安装依赖
-uv venv --python 3.12
-uv pip install -e ".[dev]"
-
-# 配置 LLM（可选）
-export ANTHROPIC_API_KEY="sk-ant-..."
+cp .env.example .env
 ```
 
-### 基本使用
+最小可用配置示例：
+
+```dotenv
+WSA_LLM_PROVIDER=anthropic
+WSA_LLM_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_API_KEY=your_key
+```
+
+如果只想跑纯静态检测，可在命令行使用 `--no-llm`，不要求 API Key。
+
+### 2. 扫描文件
 
 ```bash
-# 扫描单个文件
-wsa scan suspicious.jsp
+# 扫描单个 JSP
+uv run wsa scan "tests/fixtures/malicious/cmd_exec.jsp"
 
-# 扫描目录（递归）
-wsa scan /var/www/html/ --verbose
+# 扫描目录
+uv run wsa scan "tests/fixtures" --verbose
 
-# 扫描 JAR/WAR 包
-wsa scan app.war
+# 输出 JSON
+uv run wsa scan "tests/fixtures" --format json --output "results.json"
 
-# 输出 JSON 格式
-wsa scan target/ --format json --output results.json
+# 跳过 LLM
+uv run wsa scan "tests/fixtures" --no-llm
 
-# 跳过 LLM 分析（纯静态检测，更快）
-wsa scan target/ --no-llm
+# 并发扫描
+uv run wsa scan "tests/fixtures" --workers 8
 
-# 并发扫描，指定线程数
-wsa scan /opt/tomcat/webapps/ --workers 8
-
-# 按扩展名过滤
-wsa scan target/ --include "*.jsp"
+# 按 glob 过滤
+uv run wsa scan "tests/fixtures" --include "*.jsp"
 ```
 
-### CLI 参数
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `TARGET` | 扫描目标（文件/目录/ZIP） | 必填 |
-| `--format, -f` | 输出格式：table / json / jsonl | table |
-| `--output, -o` | 输出到文件 | stdout |
-| `--workers, -w` | 并发线程数 | 4 |
-| `--include` | Glob 包含模式 | 全部 |
-| `--exclude` | Glob 排除模式 | 无 |
-| `--no-llm` | 跳过 LLM 分析 | false |
-| `--verbose, -v` | 详细输出（显示 Top Evidence） | false |
-
-### 退出码
+### 3. 退出码
 
 | 退出码 | 含义 |
-|--------|------|
-| 0 | 全部 benign |
-| 1 | 发现 malicious |
-| 2 | 发现 suspicious |
-| 3 | 扫描出错 |
+| --- | --- |
+| `0` | 全部为 benign / 无可扫描文件 |
+| `1` | 至少一个 malicious |
+| `2` | 无 malicious，但至少一个 suspicious |
+| `3` | 扫描过程出现错误 |
 
-### 输出示例
+## CLI
 
-```
-                              Scan Results
-┌──────────────────┬───────┬────────────┬────────────┬──────────┐
-│ File             │ Stack │  Verdict   │ Confidence │ Evidence │
-├──────────────────┼───────┼────────────┼────────────┼──────────┤
-│ behinder_v3.jsp  │ jsp   │ MALICIOUS  │     100.0% │        5 │
-│ cmd_exec.jsp     │ jsp   │ MALICIOUS  │     100.0% │        3 │
-│ godzilla.jsp     │ jsp   │ MALICIOUS  │     100.0% │        3 │
-│ script_engine.j… │ jsp   │ MALICIOUS  │      90.0% │        3 │
-│ file_upload.jsp  │ jsp   │ SUSPICIOUS │      68.0% │        2 │
-│ hello.jsp        │ jsp   │   BENIGN   │       5.0% │        0 │
-│ dashboard.jsp    │ jsp   │   BENIGN   │       5.0% │        0 │
-└──────────────────┴───────┴────────────┴────────────┴──────────┘
-┌─────────────────────── Summary ───────────────────────┐
-│ Total: 7 │ 4 malicious │ 1 suspicious │ 2 benign     │
-└──────────────────────────────────────────────────────-┘
+### `wsa scan`
+
+```text
+uv run wsa scan TARGET [OPTIONS]
 ```
 
-## 配置
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `TARGET` | 文件、目录或 `.zip` | 必填 |
+| `--format`, `-f` | `table` / `json` / `jsonl` | `table` |
+| `--output`, `-o` | 输出文件路径 | stdout |
+| `--workers`, `-w` | 并发数 | `4` |
+| `--include` | glob 包含规则 | 无 |
+| `--exclude` | glob 排除规则 | 无 |
+| `--no-llm` | 禁用 LLM 裁决 | `false` |
+| `--verbose`, `-v` | 表格模式下显示 Top Evidence | `false` |
 
-所有配置通过环境变量设置，前缀 `WSA_`：
+说明：
+
+- 当前 CLI 会自动解压 `.zip`
+- `.jar` / `.war` 当前不会自动进入 `jar_scanner` 深扫流程
+
+### `wsa rag`
 
 ```bash
-# LLM 配置
-export WSA_LLM_PROVIDER=anthropic          # anthropic / openai / local
-export WSA_LLM_MODEL=claude-sonnet-4-20250514
-export WSA_LLM_TEMPERATURE=0.0
+# 基于 tests/fixtures 与 rules/regex 构建索引
+uv run wsa rag build
 
-# 置信门阈值
-export WSA_GATE_HIGH=0.9                   # ≥ 此值直出 malicious
-export WSA_GATE_LOW=0.1                    # ≤ 此值直出 benign
+# 增量添加文件
+uv run wsa rag add "sample.jsp" --label malicious --tags behinder,rce
 
-# 扫描参数
-export WSA_MAX_FILE_SIZE_MB=50
-export WSA_SCAN_TIMEOUT_SEC=30
-export WSA_SCAN_WORKERS=4
+# 查看索引统计
+uv run wsa rag stats
 
-# 规则目录
-export WSA_RULES_DIR=rules
-export WSA_YARA_DIR=rules/yara
-export WSA_REGEX_DIR=rules/regex
+# 调试检索
+uv run wsa rag search "Runtime.getRuntime().exec(request.getParameter())"
 ```
 
-## 检测能力
+子命令：
 
-### 检测引擎
+- `build`
+- `add`
+- `stats`
+- `search`
 
-| 引擎 | 方法 | 规则数 | 权重 | 用途 |
-|------|------|--------|------|------|
-| Regex | YAML 驱动正则匹配 | 26 条 | 0.9 | 已知特征召回 |
-| YARA | 二进制/文本模式匹配 | 10 条 | 1.0 | 字节码级检测 |
-| AST | javalang 污点分析 | 4 类检测 | 1.0 | Source→Sink 路径 |
-| Stat | 熵/行长/Base64 密度 | 3 类异常 | 0.5 | 辅助信号 |
-| LLM | Claude 语义研判 | - | 0.8 | 未知变种精度 |
+## 多代理模式
 
-### 覆盖的威胁类型
+默认配置下：
 
-**JSP Webshell（14 条 Regex + 5 条 YARA）：**
-- Runtime.exec / ProcessBuilder 命令执行
-- 反射链（Class.forName → getMethod → invoke）
-- BCEL ClassLoader 滥用
-- 冰蝎（Behinder）v3/v4
-- 哥斯拉（Godzilla）
-- ScriptEngine 动态执行
-- 文件写入后门
-- Thread ClassLoader 操纵
-
-**Java .class（12 条 Regex + 5 条 YARA）：**
-- Runtime.exec / ProcessBuilder
-- 反射链 / defineClass
-- BCEL / Unsafe
-- 反序列化（ObjectInputStream）
-- JNDI 注入
-- EL 表达式注入
-- Base64 + ClassLoader 组合
-
-**AST 分析（4 类检测）：**
-- 污点分析：request.getParameter → exec/eval/FileOutputStream
-- 反射链检测：Class.forName → getMethod → invoke
-- ClassLoader 滥用：defineClass / loadClass
-- 危险类型实例化：Runtime / ProcessBuilder / ScriptEngine
-
-### 判定逻辑
-
+```dotenv
+WSA_AGENT_MODE=multi
 ```
-最终判定 = f(静态置信度, LLM 判定, Sandbox 报告)
-
-静态置信度 = max(各证据加权分) + 多源加成(+0.1) + 统计异常加成(+0.05)
-  权重: yara=1.0, regex=0.9, ast=1.0, stat=0.5
-
-LLM 融合:
-  静态说 malicious + LLM 说 benign → 0.7×静态 + 0.3×LLM（保守）
-  其他情况 → 0.6×静态 + 0.4×LLM
-
-判定阈值:
-  ≥ 0.8 → malicious
-  ≥ 0.4 → suspicious
-  ≤ 0.15 → benign
-  其他 → unknown
-```
-
-## 项目结构
-
-```
-webshell-agent/
-├── pyproject.toml                    # 项目配置 & 依赖
-├── webshell_agent_design.md          # 完整设计文档
-├── rules/
-│   ├── regex/
-│   │   ├── java_webshell.yaml        # 12 条 Java 正则规则
-│   │   └── jsp_webshell.yaml         # 14 条 JSP 正则规则
-│   ├── yara/
-│   │   ├── java/suspicious_class.yar # 5 条 Java YARA 规则
-│   │   └── jsp/webshell_generic.yar  # 5 条 JSP YARA 规则
-│   └── java_lib_whitelist.yaml       # JAR 白名单（Spring, Tomcat 等）
-├── src/wsa/
-│   ├── config.py                     # pydantic-settings 配置
-│   ├── state.py                      # ScanState / Evidence / FileMeta
-│   ├── graph.py                      # LangGraph 主图（15 节点）
-│   ├── cli/scan.py                   # Typer + Rich CLI
-│   ├── nodes/
-│   │   ├── ingest.py                 # 文件读取 · Hash · 熵
-│   │   ├── classify.py               # 技术栈识别
-│   │   ├── deobfuscate.py            # Base64/Hex 反混淆
-│   │   ├── regex_scan.py             # 正则规则扫描
-│   │   ├── yara_scan.py              # YARA 规则扫描
-│   │   ├── ast_jsp.py                # JSP → Java 合成 → AST 分析
-│   │   ├── ast_java.py               # .class 反编译 → AST 分析
-│   │   ├── stat_features.py          # 统计特征提取
-│   │   ├── gate.py                   # 置信门 & 路由决策
-│   │   ├── llm_judge.py              # LLM 语义研判
-│   │   ├── aggregate.py              # 证据汇总 & 最终判定
-│   │   └── fast_fail.py              # 未知类型快速退出
-│   ├── tools/
-│   │   ├── fs.py                     # 文件 I/O · Hash · 熵 · MIME
-│   │   ├── jsp_preprocess.py         # JSP 解析 & Java 代码合成
-│   │   ├── java_ast.py               # Java AST 污点分析
-│   │   ├── cfr.py                    # CFR 反编译 / javap 降级
-│   │   └── jar_scanner.py            # JAR/WAR 解压 & 遍历
-│   └── rules/
-│       ├── regex_engine.py           # YAML 驱动正则引擎
-│       └── yara_loader.py            # YARA 编译 & 扫描封装
-├── tests/
-│   ├── unit/                         # 15 个单元测试文件
-│   ├── e2e/                          # 端到端集成测试
-│   └── fixtures/                     # 测试样本
-│       ├── malicious/                # 8 个恶意 JSP 样本
-│       ├── benign/                   # 4 个良性 JSP 样本
-│       └── hard_negatives/           # 3 个困难负样本
-└── bench/                            # 基准测试（规划中）
-```
-
-## 测试
-
-```bash
-# 运行全部测试（77 个）
-uv run pytest tests/ -v
-
-# 仅单元测试
-uv run pytest tests/unit/ -v
-
-# 仅端到端测试
-uv run pytest tests/e2e/ -v
-
-# 运行特定测试
-uv run pytest tests/e2e/test_java_pipeline.py::TestMetrics -v -s
-```
-
-### 当前测试指标
-
-| 指标 | 值 | 目标 |
-|------|-----|------|
-| 测试总数 | 77 | - |
-| 通过率 | 100% | 100% |
-| Recall（恶意检出率） | 100%（8/8） | ≥ 85% |
-| FPR（误报率） | 0%（0/7） | ≤ 1% |
-| 执行时间 | ~23s | - |
-
-<!-- ## 开发路线图
 
 ```mermaid
-gantt
-    title Webshell Agent 开发路线图
-    dateFormat YYYY-MM-DD
-    axisFormat %m月
+flowchart TD
+    Pkg[Static Evidence Package] --> Cmd[<b>Commander</b><br/>Decision Lead]
 
-    section M1 最小闭环
-    项目脚手架 & 配置           :done, m1s01, 2025-01-01, 1d
-    State & Evidence 模型       :done, m1s02, after m1s01, 1d
-    Ingest 节点                 :done, m1s03, after m1s02, 1d
-    Classify 节点               :done, m1s04, after m1s03, 1d
-    Regex 引擎 & 规则集         :done, m1s05, after m1s02, 2d
-    YARA 加载器 & 规则集        :done, m1s06, after m1s02, 2d
-    反混淆节点                  :done, m1s07, after m1s02, 2d
-    统计特征节点                :done, m1s09, after m1s02, 1d
-    置信门节点                  :done, m1s10, after m1s09, 1d
-    LLM 语义研判                :done, m1s11, after m1s10, 2d
-    Aggregate & Emit            :done, m1s12, after m1s11, 1d
-    主图构建                    :done, m1s13, after m1s12, 2d
-    CLI 扫描入口                :done, m1s14, after m1s13, 2d
+    subgraph Tools [Expert Tools]
+        T1[Code Inspector]
+        T2[AST Taint Check]
+        T3[Rule Query]
+        T4[Stat Analysis]
+    end
 
-    section M2 JSP/Java 检测
-    JSP 预处理                  :done, m2s01, after m1s14, 2d
-    Java AST 分析               :done, m2s02, after m2s01, 2d
-    CFR 反编译集成              :done, m2s03, after m1s14, 2d
-    Java .class 检测            :done, m2s04, after m2s03, 2d
-    Fat Jar/WAR 扫描            :done, m2s05, after m2s04, 3d
-    集成测试 & 基准             :done, m2s06, after m2s05, 2d
+    Cmd <-->|Tool Calls| Tools
 
-    section M3 内存马探测
-    Java Agent 探针核心         :m3s01, after m2s06, 5d
-    Python JVM Attach 工具      :m3s02, after m3s01, 2d
-    Memshell Hunter Agent       :m3s03, after m3s02, 3d
-    子图 & 主图集成             :m3s04, after m3s03, 2d
-    端到端测试                  :m3s05, after m3s04, 3d
+    subgraph Agents [Agent Collaboration]
+        direction LR
+        Cmd <-->|Consult| Adv[<b>Advisor</b><br/>Critical Review]
+        Cmd -->|Propose| Val[<b>Validator</b><br/>Final Check]
+        Val -- Challenge --> Cmd
+    end
 
-    section M4 生产化部署
-    PostgreSQL 存储层           :m4s01, after m3s05, 3d
-    Checkpoint 持久化           :m4s02, after m4s01, 2d
-    FastAPI 服务层              :m4s03, after m4s02, 3d
-    Docker Compose              :m4s04, after m4s03, 2d
-    K8s Helm Chart              :m4s05, after m4s04, 3d
-    主机探针 Agent              :m4s06, after m4s03, 3d
-    SOC 工作台                  :m4s07, after m4s03, 5d
-    生产加固 & 全量回归         :m4s08, after m4s07, 3d
+    Val -- Accept --> Result([LLM Judgement])
+    Result --> Agg[Aggregate]
 
-    section M5/M6 持续演进
-    RAG 样本库扩张              :m5s01, after m4s08, 14d
-    对抗变形器                  :m6s01, after m5s01, 14d
-``` -->
-
-### 里程碑详情
-
-| 里程碑 | 周期 | 状态 | 目标 |
-|--------|------|------|------|
-| **M1: 最小闭环** | 4 周 | √ 已完成 | 核心管道全链路：Ingest → Classify → Regex/YARA → StatFeatures → Gate → LLM → Aggregate → Emit；CLI 扫描 |
-| **M2: JSP/Java 检测** | 4 周 | √ 已完成 | JSP 预处理 & AST 分析；CFR 反编译；Java .class 检测；Fat Jar/WAR 扫描；Recall ≥ 85% |
-| **M3: 内存马探测** | 4 周 | 规划中 | 独立 Java Agent（JVM Attach）；Filter/Servlet/Controller 枚举；ClassAnalyzer 打分；Python 集成 |
-| **M4: 生产化部署** | 4 周 | 规划中 | PostgreSQL 持久化；FastAPI REST API；Docker Compose；K8s Helm Chart；主机探针；SOC 工作台 |
-| **M5: 智能演进** | 持续 | 规划中 | RAG 样本库扩张；模型微调；主动学习 |
-| **M6: 对抗增强** | 持续 | 规划中 | 对抗变形器；SOAR 对接；自动修复 |
-
-### M3 内存马探测（规划）
-
-```mermaid
-graph LR
-    A[discover_jvms<br/>jps -lv] --> B[jvm_attach_probe<br/>注入 Agent]
-    B --> C[HandlerEnumerator<br/>反射枚举 Filter/Servlet/Controller]
-    C --> D[ClassAnalyzer<br/>可疑度打分]
-    D --> E{score ≥ 60?}
-    E -->|Yes| F[dump_class<br/>提取字节码]
-    F --> G[ast_java 分析]
-    E -->|No| H[正常]
-    G --> I[Evidence 汇总]
+    style Cmd fill:#e3f2fd,stroke:#1565c0
+    style Adv fill:#f3e5f5,stroke:#7b1fa2
+    style Val fill:#e8f5e9,stroke:#2e7d32
+    style Tools fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5
 ```
 
-打分规则：
-- +30 非标准 ClassLoader
-- +40 类文件磁盘不存在
-- +20 包名不在白名单
-- +10 随机类名（熵 > 3.5）
-- +30 方法体含 Runtime/ProcessBuilder
-- -20 已知框架类（Spring Security, Shiro）
+主图在进入深度语义裁决时，会优先尝试多代理流程：
 
-### M4 生产化部署（规划）
+- `Commander`
+  - 负责主裁决与工具调用
+- `Advisor`
+  - 负责二次意见与反驳视角
+- `Validator`
+  - 负责校验结论和置信度是否一致
 
-```mermaid
-graph TB
-    subgraph K8s["Kubernetes 集群"]
-        API[API Server<br/>FastAPI + Uvicorn]
-        Worker[Worker<br/>LangGraph 扫描]
-        Probe[主机探针<br/>DaemonSet]
-        Sandbox[沙箱<br/>gVisor 隔离]
-    end
+多代理可调用的工具包括：
 
-    subgraph Storage["存储层"]
-        PG[(PostgreSQL<br/>6 张核心表)]
-        Redis[(Redis<br/>任务队列 + 缓存)]
-    end
+- `inspect_code_region`
+- `run_ast_taint_check`
+- `search_similar_samples`
+- `check_java_imports`
+- `decompile_class`
+- `get_stat_anomalies`
+- `query_detection_rules`
+- `get_evidence_summary`
 
-    subgraph Monitor["监控"]
-        Prom[Prometheus]
-        Grafana[Grafana<br/>3 个 Dashboard]
-        LS[LangSmith<br/>Trace]
-    end
+如果多代理流程异常，主图会回退到单模型 `llm_judge`。
 
-    API --> Redis --> Worker
-    Worker --> PG
-    Worker --> Sandbox
-    Probe -->|inotify| API
-    Worker --> Prom --> Grafana
-    Worker --> LS
+## RAG 检索增强
+
+启用方式：
+
+```dotenv
+WSA_RAG_ENABLED=true
+WSA_RAG_INDEX_DIR=data
+WSA_RAG_EMBEDDING_PROVIDER=local
+WSA_RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
 ```
 
-## 告警输出格式
+```mermaid
+flowchart LR
+    subgraph Indexing [Offline: Indexing]
+        direction TB
+        Src[Fixtures & Rules] --> Build[Index Builder]
+        Build --> Embed[Embedding Model]
+        Embed --> Vec[(rag_embeddings.npy)]
+        Build --> Corp[(rag_corpus.jsonl)]
+    end
 
-ECS（Elastic Common Schema）兼容：
+    subgraph Retrieval [Online: Retrieval]
+        direction TB
+        Sample[Current Sample] --> QBuild[Query Builder]
+        QBuild --> QEmbed[Embed Query]
+        QEmbed --> Search{Vector Search}
+    end
+
+    Vec & Corp --> Search
+    Search --> Res[Top-K Samples]
+    Res --> LLM[[LLM / Multi-Agent Judge]]
+
+    style Indexing fill:#f5f5f5,stroke:#616161
+    style Retrieval fill:#e1f5fe,stroke:#01579b
+    style Search fill:#fff4dd,stroke:#d4a017
+```
+
+实现方式：
+
+- 语料来源：
+  - `tests/fixtures`
+  - `rules/regex/*.yaml`
+- 向量存储：
+  - `rag_corpus.jsonl`
+  - `rag_embeddings.npy`
+- 检索结果会区分：
+  - 相似恶意样本
+  - 相似良性样本
+
+## 关键配置项
+
+所有配置都通过 `WSA_` 前缀环境变量读取，并支持 `.env`。
+
+### 常用且已实际生效
+
+| 变量 | 作用 | 默认值 |
+| --- | --- | --- |
+| `WSA_LLM_PROVIDER` | `anthropic` / `openai` / `local` | `anthropic` |
+| `WSA_LLM_MODEL` | 主 LLM 模型名 | `claude-sonnet-4-20250514` |
+| `WSA_LLM_TEMPERATURE` | 主 LLM 温度 | `0.0` |
+| `WSA_LLM_MAX_TOKENS` | 主 LLM 最大输出 | `4096` |
+| `WSA_LLM_TIMEOUT_SEC` | 主 LLM 超时 | `60` |
+| `WSA_LLM_RETRY_COUNT` | 主 LLM 重试次数 | `2` |
+| `WSA_LLM_BASE_URL` | 自定义网关 / 代理地址 | 空 |
+| `WSA_LLM_API_KEY` | 自定义 API Key | 空 |
+| `WSA_GATE_HIGH` | 高阈值 | `0.9` |
+| `WSA_GATE_LOW` | 低阈值 | `0.1` |
+| `WSA_SANDBOX_ENABLED` | 是否启用 sandbox | `false` |
+| `WSA_RAG_ENABLED` | 是否启用 RAG | `false` |
+| `WSA_RAG_INDEX_DIR` | RAG 索引目录 | `data` |
+| `WSA_RAG_EMBEDDING_PROVIDER` | `local` / `openai` | `local` |
+| `WSA_RAG_EMBEDDING_MODEL` | 嵌入模型 | `all-MiniLM-L6-v2` |
+| `WSA_AGENT_MODE` | `single` / `multi` | `multi` |
+| `WSA_AGENT_MAX_LOOPS` | 多代理最大循环次数 | `3` |
+| `WSA_AGENT_MAX_LLM_CALLS` | 多代理 LLM 总预算 | `8` |
+| `WSA_AGENT_MAX_TOOL_ROUNDS` | Commander 工具轮数 | `5` |
+| `WSA_AGENT_ENABLE_ADVISOR` | 是否启用 Advisor | `true` |
+| `WSA_AGENT_ENABLE_VALIDATOR` | 是否启用 Validator | `true` |
+
+### 已定义但尚未完全贯通到主入口
+
+这些配置存在于 [`src/wsa/config.py`](src/wsa/config.py)，但当前主 CLI 没有全部消费：
+
+- `WSA_MAX_FILE_SIZE_MB`
+- `WSA_SCAN_TIMEOUT_SEC`
+- `WSA_SCAN_WORKERS`
+- `WSA_CHECKPOINT_BACKEND`
+- `WSA_PG_DSN`
+- `WSA_LANGSMITH_ENABLED`
+- `WSA_LLM_BUDGET_PER_FILE`
+
+## 输出结果
+
+聚合阶段会构造 ECS 风格结果，内部字段见 [`src/wsa/nodes/aggregate.py`](src/wsa/nodes/aggregate.py)。
+
+JSON 输出示例：
 
 ```json
 {
-  "@timestamp": "2025-01-15T10:30:00Z",
-  "event": {
-    "kind": "alert",
-    "category": "malware",
-    "severity": 90
-  },
-  "file": {
-    "path": "/var/www/html/shell.jsp",
-    "hash": {
-      "sha256": "a1b2c3...",
-      "md5": "d4e5f6..."
-    },
-    "size": 1234
-  },
-  "threat": {
-    "technique": {
-      "id": "T1505.003",
-      "name": "Web Shell"
-    }
-  },
-  "wsa": {
-    "verdict": "malicious",
-    "confidence": 0.95,
-    "tech_stack": "jsp",
-    "evidence_count": 3,
-    "explanation": "[regex/jsp_runtime_exec] score=0.95; [yara/jsp_runtime_exec] score=0.90; [ast/ast.taint_exec] score=0.90"
-  }
+  "file_path": "tests/fixtures/malicious/cmd_exec.jsp",
+  "tech_stack": "jsp",
+  "verdict": "malicious",
+  "confidence": 0.95,
+  "evidence_count": 3,
+  "evidences": [],
+  "errors": []
 }
 ```
 
-## 扩展规则
+内部还会生成更完整的 `_alert` 结构，包含：
+
+- `event.kind`
+- `event.severity`
+- `file.hash`
+- `threat.technique`
+- `wsa.llm.*`
+
+## 测试状态
+
+当前仓库测试覆盖了规则、节点、图编排、RAG、LLM 裁决、多代理、JAR 扫描等模块。
+
+运行命令：
+
+```bash
+uv run pytest -q
+```
+
+我在当前仓库本地执行的结果是：
+
+```text
+145 passed in 13.87s
+```
+
+E2E 夹具位于：
+
+- `tests/fixtures/malicious`
+- `tests/fixtures/benign`
+- `tests/fixtures/hard_negatives`
+
+其中端到端测试会校验：
+
+- 恶意样本召回率 `>= 85%`
+- 良性/困难负样本误报率 `<= 1%`
+
+## 项目结构
+
+```text
+webshells-detector/
+├─ rules/
+│  ├─ regex/
+│  ├─ yara/
+│  └─ java_lib_whitelist.yaml
+├─ src/wsa/
+│  ├─ agents/        # 多代理编排、提示词、工具集
+│  ├─ cli/           # Typer CLI
+│  ├─ nodes/         # LangGraph 节点
+│  ├─ rag/           # 语料、嵌入、向量检索
+│  ├─ rules/         # Regex/YARA 加载器
+│  ├─ tools/         # 反编译、JSP 预处理、AST、JAR 扫描
+│  ├─ config.py
+│  ├─ graph.py
+│  ├─ llm_provider.py
+│  └─ state.py
+├─ tests/
+│  ├─ e2e/
+│  ├─ fixtures/
+│  └─ unit/
+├─ .env.example
+├─ pyproject.toml
+└─ uv.lock
+```
+
+## 扩展方式
 
 ### 添加 Regex 规则
 
-在 `rules/regex/` 下创建 YAML 文件：
+放到 `rules/regex/*.yaml`：
 
 ```yaml
 rules:
-  - id: my_custom_rule
-    stack: jsp          # jsp / java_class / php / script / any
-    description: "描述"
-    pattern: 'your_regex_pattern'
-    severity: critical  # critical / high / medium / low
-    confidence: 0.90    # 0.0 ~ 1.0
+  - id: my_rule
+    stack: jsp
+    description: "自定义规则"
+    pattern: 'Runtime\s*\.\s*getRuntime'
+    severity: high
+    confidence: 0.8
     tags: [webshell, rce]
 ```
 
 ### 添加 YARA 规则
 
-在 `rules/yara/<stack>/` 下创建 `.yar` 文件：
+放到 `rules/yara/<stack>/*.yar`：
 
 ```yara
-rule my_custom_rule {
+rule my_rule {
     meta:
-        author = "your_name"
-        description = "描述"
-        confidence = "0.85"
+        confidence = "0.80"
         severity = "high"
         tags = "webshell,rce"
     strings:
-        $s1 = "pattern1" ascii
-        $s2 = "pattern2" ascii
+        $a = "Runtime.getRuntime().exec" ascii
     condition:
-        $s1 and $s2
+        $a
 }
 ```
+
+## 已知限制
+
+- 当前检测效果最可靠的目标是 `JSP` 和 `Java .class`
+- `PHP` / 脚本文件类型已接入入口，但规则与 AST 能力仍不完整
+- JAR/WAR 深扫工具已存在，但未默认串入 `wsa scan`
+- Sandbox 是轻量行为探测，不是完整动态沙箱
 
 ## License
 
