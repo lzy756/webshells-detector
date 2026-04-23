@@ -1,0 +1,55 @@
+[project]
+name = "webshell-agent"
+version = "0.1.0"
+description = "LangGraph-based Webshell & Malicious Script Detection Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.4",
+    "langchain-core>=0.3",
+    "langchain-anthropic>=0.3",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "yara-python>=4.5",
+    "typer>=0.12",
+    "rich>=13.7",
+    "structlog>=24.1",
+    "pyyaml>=6.0",
+    "python-magic-bin>=0.4;sys_platform=='win32'",
+    "python-magic>=0.4;sys_platform!='win32'",
+    "javalang>=0.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "coverage>=7.5",
+]
+
+[project.scripts]
+wsa = "wsa.cli.scan:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true

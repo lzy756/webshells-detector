@@ -1,0 +1,96 @@
+rules:
+  - id: java_runtime_exec
+    stack: java_class
+    description: "Runtime.exec() command execution"
+    pattern: 'Runtime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec\s*\('
+    severity: critical
+    confidence: 0.90
+    tags: [webshell, rce]
+
+  - id: java_processbuilder
+    stack: java_class
+    description: "ProcessBuilder command execution"
+    pattern: 'new\s+ProcessBuilder\s*\('
+    severity: high
+    confidence: 0.75
+    tags: [rce]
+
+  - id: java_reflection_forname
+    stack: java_class
+    description: "Class.forName reflective loading"
+    pattern: 'Class\s*\.\s*forName\s*\('
+    severity: medium
+    confidence: 0.50
+    tags: [reflection]
+
+  - id: java_defineclass
+    stack: java_class
+    description: "ClassLoader.defineClass dynamic class loading"
+    pattern: 'defineClass\s*\('
+    severity: high
+    confidence: 0.80
+    tags: [classloader]
+
+  - id: java_bcel_loader
+    stack: java_class
+    description: "BCEL classloader abuse"
+    pattern: '(BCEL|com\.sun\.org\.apache\.bcel)'
+    severity: critical
+    confidence: 0.90
+    tags: [webshell, classloader]
+
+  - id: java_unsafe_access
+    stack: java_class
+    description: "sun.misc.Unsafe usage"
+    pattern: 'sun\.misc\.Unsafe'
+    severity: high
+    confidence: 0.60
+    tags: [suspicious]
+
+  - id: java_base64_classload
+    stack: java_class
+    description: "Base64 decode to class loading"
+    pattern: 'Base64.*defineClass|defineClass.*Base64'
+    severity: critical
+    confidence: 0.90
+    tags: [webshell, classloader]
+
+  - id: java_cmd_concat
+    stack: java_class
+    description: "Command string concatenation with user input"
+    pattern: '(cmd|command|shell)\s*[\+\=].*request\.(getParameter|getHeader)'
+    severity: critical
+    confidence: 0.90
+    tags: [webshell, rce, taint]
+
+  - id: java_deserialization
+    stack: java_class
+    description: "ObjectInputStream deserialization"
+    pattern: 'ObjectInputStream\s*\(.*\)\s*\.\s*readObject\s*\('
+    severity: high
+    confidence: 0.65
+    tags: [deserialization]
+
+  - id: java_script_engine
+    stack: java_class
+    description: "ScriptEngine eval with dynamic input"
+    pattern: 'ScriptEngine.*\.eval\s*\('
+    severity: high
+    confidence: 0.70
+    tags: [webshell, rce]
+
+  - id: java_jndi_lookup
+    stack: java_class
+    description: "JNDI lookup (potential JNDI injection)"
+    pattern: '(InitialContext|Context)\s*\(\s*\)\s*\.\s*lookup\s*\('
+    severity: high
+    confidence: 0.70
+    tags: [jndi, injection]
+
+  - id: java_expression_language
+    stack: java_class
+    description: "EL expression injection"
+    pattern: 'ELProcessor|ExpressionFactory.*createValueExpression'
+    severity: high
+    confidence: 0.65
+    tags: [injection, el]

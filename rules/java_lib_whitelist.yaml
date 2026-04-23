@@ -1,0 +1,25 @@
+whitelist:
+  - group_id: "org.springframework"
+    artifact_id: "*"
+    action: skip
+  - group_id: "org.apache.tomcat"
+    artifact_id: "*"
+    action: skip
+  - group_id: "ch.qos.logback"
+    artifact_id: "*"
+    action: skip
+  - group_id: "org.slf4j"
+    artifact_id: "*"
+    action: skip
+  - group_id: "com.fasterxml.jackson"
+    artifact_id: "*"
+    action: skip
+  - group_id: "org.hibernate"
+    artifact_id: "*"
+    action: skip
+  - group_id: "com.google.guava"
+    artifact_id: "*"
+    action: skip
+  - group_id: "org.apache.commons"
+    artifact_id: "*"
+    action: skip

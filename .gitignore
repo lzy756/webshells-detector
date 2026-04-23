@@ -1,0 +1,23 @@
+# webshell-agent
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+.env.*
+*.db
+*.sqlite3
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.heapsnapshot
+*.trace
+node_modules/
+*.md

@@ -1,0 +1,112 @@
+rules:
+  - id: jsp_runtime_exec
+    stack: jsp
+    description: "Runtime.exec() with request parameter input"
+    pattern: 'Runtime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec\s*\('
+    severity: critical
+    confidence: 0.95
+    tags: [webshell, rce, T1059]
+
+  - id: jsp_processbuilder
+    stack: jsp
+    description: "ProcessBuilder command execution"
+    pattern: 'new\s+ProcessBuilder\s*\('
+    severity: critical
+    confidence: 0.85
+    tags: [webshell, rce]
+
+  - id: jsp_reflection_chain
+    stack: jsp
+    description: "Reflection chain: Class.forName -> getMethod -> invoke"
+    pattern: 'Class\s*\.\s*forName\s*\(.*\)\s*\.\s*getMethod'
+    severity: high
+    confidence: 0.80
+    tags: [webshell, reflection]
+
+  - id: jsp_bcel_decode
+    stack: jsp
+    description: "BCEL classloader abuse"
+    pattern: '(com\.sun\.org\.apache\.bcel|BCEL|$$BCEL$$)'
+    severity: critical
+    confidence: 0.95
+    tags: [webshell, classloader]
+
+  - id: jsp_classloader_define
+    stack: jsp
+    description: "Custom ClassLoader defineClass"
+    pattern: 'defineClass\s*\('
+    severity: high
+    confidence: 0.80
+    tags: [webshell, classloader]
+
+  - id: jsp_request_to_exec
+    stack: jsp
+    description: "Request parameter directly to exec"
+    pattern: '(getParameter|getHeader|getInputStream).*\b(exec|ProcessBuilder|Runtime)\b'
+    severity: critical
+    confidence: 0.95
+    tags: [webshell, rce, taint]
+
+  - id: jsp_base64_classload
+    stack: jsp
+    description: "Base64 decode to class loading"
+    pattern: '(Base64\s*\.\s*(decode|getDecoder)|base64Decode).*defineClass'
+    severity: critical
+    confidence: 0.90
+    tags: [webshell, classloader, obfuscation]
+
+  - id: jsp_unsafe_import
+    stack: jsp
+    description: "Suspicious imports for webshell"
+    pattern: 'import\s+(java\.lang\.reflect|sun\.misc\.Unsafe|javax\.crypto)'
+    severity: medium
+    confidence: 0.40
+    tags: [suspicious, import]
+
+  - id: jsp_behinder_key
+    stack: jsp
+    description: "Behinder (冰蝎) webshell key pattern"
+    pattern: '(e45e329feb5d925b|AES/ECB/PKCS5Padding|rebeyond)'
+    severity: critical
+    confidence: 0.98
+    tags: [webshell, behinder, tool]
+
+  - id: jsp_godzilla_pass
+    stack: jsp
+    description: "Godzilla (哥斯拉) webshell pattern"
+    pattern: '(godzilla|pass=|xc=|String\s+xc\s*=)'
+    severity: high
+    confidence: 0.75
+    tags: [webshell, godzilla, tool]
+
+  - id: jsp_thread_classloader
+    stack: jsp
+    description: "Thread context classloader manipulation"
+    pattern: 'Thread\s*\.\s*currentThread\s*\(\s*\)\s*\.\s*(getContextClassLoader|setContextClassLoader)'
+    severity: medium
+    confidence: 0.50
+    tags: [suspicious, classloader]
+
+  - id: jsp_invoke_method
+    stack: jsp
+    description: "Reflective method invocation"
+    pattern: '\.invoke\s*\(.*,\s*(new\s+Object|null)'
+    severity: high
+    confidence: 0.70
+    tags: [webshell, reflection]
+
+  - id: jsp_file_write_param
+    stack: jsp
+    description: "File write with request parameter input"
+    pattern: 'FileOutputStream\s*\(\s*(path|file|request)'
+    severity: high
+    confidence: 0.70
+    tags: [webshell, file_write, taint]
+
+  - id: jsp_script_engine_eval
+    stack: jsp
+    description: "ScriptEngine eval with dynamic input"
+    pattern: '(ScriptEngine|engine|scriptEngine)\s*[\.\w]*\.eval\s*\('
+    severity: high
+    confidence: 0.70
+    tags: [webshell, rce, script_engine]
