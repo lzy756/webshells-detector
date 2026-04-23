@@ -21,3 +21,4 @@ htmlcov/
 *.trace
 node_modules/
 *.md
+!README.md
