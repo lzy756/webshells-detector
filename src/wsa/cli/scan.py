@@ -17,6 +17,10 @@ from rich.text import Text
 app = typer.Typer(name="wsa", help="Webshell Agent - LangGraph-based malicious file detector")
 console = Console()
 
+from wsa.cli.rag import rag_app
+
+app.add_typer(rag_app)
+
 SCAN_EXTENSIONS = {".jsp", ".jspx", ".class", ".jar", ".war", ".php", ".phtml", ".phar", ".sh", ".bat", ".ps1", ".py"}
 
 

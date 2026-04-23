@@ -22,7 +22,8 @@ Rules:
 3. If evidence is insufficient, return "unknown" with low confidence
 4. Key indicators: command execution, file operations, network connections, obfuscation, classloader abuse, reflection chains, deserialization gadgets
 5. Known benign patterns: framework internals (Spring, Struts), build tools, test code
-6. Pay special attention to Source->Sink paths and deobfuscation results"""
+6. Pay special attention to Source->Sink paths and deobfuscation results
+7. If reference examples from known corpus are provided, use them as calibration anchors. Compare the current sample's patterns against both malicious and benign references before making your verdict."""
 
 
 class LLMJudgeOutput(BaseModel):
@@ -40,7 +41,7 @@ STAT_ANOMALY_THRESHOLDS = {
 }
 
 
-def _build_payload(state: ScanState) -> str:
+def _build_payload(state: ScanState, rag_examples: dict | None = None) -> str:
     code = state.get("deobfuscated") or ""
     raw = state.get("file_bytes", b"")
     if not code:
@@ -112,7 +113,7 @@ def _build_payload(state: ScanState) -> str:
             )
     snippets_section = "\n\n".join(high_risk_snippets) if high_risk_snippets else "None"
 
-    return f"""## Sample Info
+    payload = f"""## Sample Info
 Tech stack: {state.get('tech_stack', 'unknown')}
 File: {state.get('file_path', 'unknown')}
 Deobfuscation layers: {state.get('deobfuscation_layers', 0)}
@@ -139,6 +140,30 @@ Deobfuscation layers: {state.get('deobfuscation_layers', 0)}
 ```
 {code[:4000]}
 ```"""
+
+    if rag_examples:
+        rag_section = "\n\n## Reference Examples (from known corpus)\n"
+        mal = rag_examples.get("malicious_examples", [])
+        if mal:
+            rag_section += "\n### Similar Malicious Samples\n"
+            for i, ex in enumerate(mal, 1):
+                rag_section += (
+                    f"{i}. [{ex.get('source', '?')}] tags: {', '.join(ex.get('tags', []))}\n"
+                    f"   Matched rules: {', '.join(ex.get('matched_rules', [])) or '(none)'}\n"
+                    f"   Code: {ex.get('code_snippet', '')[:300]}\n\n"
+                )
+        ben = rag_examples.get("benign_examples", [])
+        if ben:
+            rag_section += "### Similar Benign Samples\n"
+            for i, ex in enumerate(ben, 1):
+                rag_section += (
+                    f"{i}. [{ex.get('source', '?')}] tags: {', '.join(ex.get('tags', []))}\n"
+                    f"   Matched rules: {', '.join(ex.get('matched_rules', [])) or '(none)'}\n"
+                    f"   Code: {ex.get('code_snippet', '')[:300]}\n\n"
+                )
+        payload += rag_section
+
+    return payload
 
 
 def _parse_judge_output(raw: str) -> LLMJudgeOutput:
@@ -173,7 +198,21 @@ def llm_judge_node(state: ScanState) -> dict:
     try:
         from wsa.llm_provider import get_llm_model
         model = get_llm_model()
-        payload = _build_payload(state)
+
+        rag_examples = None
+        if settings.rag_enabled:
+            try:
+                from wsa.rag import get_retriever
+                retriever = get_retriever()
+                rag_examples = retriever.retrieve_examples(state)
+                meta["rag_retrieved"] = True
+                meta["rag_mal_count"] = len((rag_examples or {}).get("malicious_examples", []))
+                meta["rag_ben_count"] = len((rag_examples or {}).get("benign_examples", []))
+            except Exception:
+                logger.warning("RAG retrieval failed, proceeding without", exc_info=True)
+                meta["rag_retrieved"] = False
+
+        payload = _build_payload(state, rag_examples=rag_examples)
 
         result = None
         last_err = None

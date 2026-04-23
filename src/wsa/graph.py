@@ -17,6 +17,19 @@ from wsa.nodes.aggregate import aggregate_node, emit_node
 from wsa.nodes.ast_jsp import ast_jsp_node
 from wsa.nodes.ast_java import ast_java_node
 from wsa.nodes.sandbox import sandbox_node
+from wsa.config import settings
+
+logger = __import__("logging").getLogger(__name__)
+
+
+def _select_judge_node(state: ScanState) -> dict:
+    if settings.agent_mode == "multi":
+        try:
+            from wsa.agents import multi_agent_judge_node
+            return multi_agent_judge_node(state)
+        except Exception as e:
+            logger.error("Multi-agent failed, falling back to single judge: %s", e)
+    return llm_judge_node(state)
 
 
 def _stub_node(state: ScanState) -> dict:
@@ -38,7 +51,7 @@ def build_graph(checkpointer=None):
     g.add_node("stat_features", stat_features_node)
     g.add_node("confidence_gate", gate_node)
     g.add_node("sandbox", sandbox_node)
-    g.add_node("llm_judge", llm_judge_node)
+    g.add_node("llm_judge", _select_judge_node)
     g.add_node("aggregate", aggregate_node)
     g.add_node("emit", emit_node)
 

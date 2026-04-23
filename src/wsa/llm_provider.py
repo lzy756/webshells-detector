@@ -17,24 +17,36 @@ def get_llm_model() -> BaseChatModel:
     temperature = settings.llm_temperature
     max_tokens = settings.llm_max_tokens
     timeout = settings.llm_timeout_sec
+    base_url = settings.llm_base_url or None
+    api_key = settings.llm_api_key or None
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
+        kwargs: dict = dict(
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=float(timeout),
         )
+        if base_url:
+            kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        return ChatAnthropic(**kwargs)
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
+        kwargs = dict(
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=float(timeout),
         )
+        if base_url:
+            kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        return ChatOpenAI(**kwargs)
 
     if provider == "local":
         from langchain_ollama import ChatOllama
@@ -42,7 +54,7 @@ def get_llm_model() -> BaseChatModel:
             model=model_name,
             temperature=temperature,
             num_predict=max_tokens,
-            base_url=settings.local_model_base_url,
+            base_url=base_url or settings.local_model_base_url,
         )
 
     raise ValueError(f"Unsupported LLM provider: {provider}")
