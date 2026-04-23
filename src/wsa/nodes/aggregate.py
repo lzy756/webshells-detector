@@ -48,6 +48,8 @@ def emit_node(state: ScanState) -> dict:
         f"[{e.get('source')}/{e.get('rule_id')}] score={e.get('score', 0):.2f}" for e in top_evidence
     )
 
+    llm_meta = state.get("llm_meta", {})
+
     alert = {
         "@timestamp": datetime.now(timezone.utc).isoformat(),
         "event": {
@@ -69,6 +71,13 @@ def emit_node(state: ScanState) -> dict:
             "tech_stack": state.get("tech_stack", "unknown"),
             "evidence_count": len(evidences),
             "explanation": explanation,
+            "llm": {
+                "invoked": llm_meta.get("llm_invoked", False),
+                "provider": llm_meta.get("llm_provider", ""),
+                "model": llm_meta.get("llm_model", ""),
+                "latency_ms": llm_meta.get("llm_latency_ms", 0),
+                "parse_ok": llm_meta.get("llm_parse_ok", False),
+            },
         },
     }
     return {"next_action": "done", "_alert": alert}

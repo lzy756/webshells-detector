@@ -39,3 +39,15 @@ def test_gate_decision_direct_low():
 
 def test_gate_decision_llm():
     assert gate_decision({"confidence": 0.5}) == "llm"
+
+
+def test_gate_decision_no_llm_forces_direct():
+    assert gate_decision({"confidence": 0.5, "no_llm": True}) == "direct"
+
+
+def test_gate_decision_no_llm_high_conf():
+    assert gate_decision({"confidence": 0.95, "no_llm": True}) == "direct"
+
+
+def test_gate_decision_no_llm_low_conf():
+    assert gate_decision({"confidence": 0.05, "no_llm": True}) == "direct"

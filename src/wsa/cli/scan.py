@@ -50,10 +50,9 @@ def _extract_zip(zip_path: Path) -> list[Path]:
 
 def _scan_single(file_path: Path, no_llm: bool) -> dict:
     from wsa.graph import get_app_no_checkpoint
-    from wsa.nodes.gate import gate_decision as _orig_gate
 
     app_graph = get_app_no_checkpoint()
-    result = app_graph.invoke({"file_path": str(file_path)})
+    result = app_graph.invoke({"file_path": str(file_path), "no_llm": no_llm})
     return result
 
 

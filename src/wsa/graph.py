@@ -16,6 +16,7 @@ from wsa.nodes.llm_judge import llm_judge_node
 from wsa.nodes.aggregate import aggregate_node, emit_node
 from wsa.nodes.ast_jsp import ast_jsp_node
 from wsa.nodes.ast_java import ast_java_node
+from wsa.nodes.sandbox import sandbox_node
 
 
 def _stub_node(state: ScanState) -> dict:
@@ -36,7 +37,7 @@ def build_graph(checkpointer=None):
     g.add_node("ast_java", ast_java_node)
     g.add_node("stat_features", stat_features_node)
     g.add_node("confidence_gate", gate_node)
-    g.add_node("sandbox", _stub_node)
+    g.add_node("sandbox", sandbox_node)
     g.add_node("llm_judge", llm_judge_node)
     g.add_node("aggregate", aggregate_node)
     g.add_node("emit", emit_node)

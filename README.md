@@ -62,9 +62,9 @@ graph TB
     F1 --> F2
     F2 --> G1 & G2 & G3
 
-    style Core fill:#355c7d,color:#fff
-    style Static fill:#16213e,color:#fff
-    style Deep fill:#0f3460,color:#fff
+    style Core fill:#ebf8ff,color:#2b6cb0,stroke:#90cdf4
+    style Static fill:#f0fff4,color:#2f855a,stroke:#9ae6b4
+    style Deep fill:#faf5ff,color:#6b46c1,stroke:#d6bcfa
 ```
 
 ## LangGraph 管道流程
@@ -374,7 +374,7 @@ uv run pytest tests/e2e/test_java_pipeline.py::TestMetrics -v -s
 | FPR（误报率） | 0%（0/7） | ≤ 1% |
 | 执行时间 | ~23s | - |
 
-## 开发路线图
+<!-- ## 开发路线图
 
 ```mermaid
 gantt
@@ -425,7 +425,7 @@ gantt
     section M5/M6 持续演进
     RAG 样本库扩张              :m5s01, after m4s08, 14d
     对抗变形器                  :m6s01, after m5s01, 14d
-```
+``` -->
 
 ### 里程碑详情
 

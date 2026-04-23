@@ -45,6 +45,8 @@ def gate_node(state: ScanState) -> dict:
 
 
 def gate_decision(state: ScanState) -> Literal["direct", "sandbox", "llm"]:
+    if state.get("no_llm"):
+        return "direct"
     conf = state.get("confidence", 0.5)
     if conf >= settings.gate_high or conf <= settings.gate_low:
         return "direct"

@@ -43,6 +43,8 @@ class ScanState(TypedDict, total=False):
     stat_features: dict
     sandbox_report: dict | None
     llm_judgement: dict | None
+    llm_meta: dict
+    no_llm: bool
     confidence: float
     verdict: str
     evidences: Annotated[list[dict], operator.add]
